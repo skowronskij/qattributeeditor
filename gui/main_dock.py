@@ -60,21 +60,18 @@ class QAttributeEditorDockWidget(QDockWidget, FORM_CLASS):
         """ Connecting all signals within dockwidget """
         iface.currentLayerChanged.connect(self.onLayerChange)
         QgsProject().instance().layersWillBeRemoved.connect(self.onLayersDelete)
-        self.lwFeatures.itemSelectionChanged.connect(self.selectFeatureByRow)
-        self.cbxAttribute.stateChanged.connect(
-            lambda data: self.qgsFieldCb.setEnabled(True)
-            if data == 2 else self.qgsFieldCb.setEnabled(False)
-        )
+        self.cbxField.stateChanged.connect(self.onFieldFilter)
         self.qgsFieldCb.fieldChanged.connect(self.fillFeatureList)
-        self.tbZoom.clicked.connect(lambda: self.lwFeatures.clearSelection())
+        self.lwFeatures.itemSelectionChanged.connect(self.selectFeatureByRow)
 
     def disconnectSignals(self):
         """ Disconnecting all signals within dockwidget on plugin unload """
         iface.currentLayerChanged.disconnect(self.onLayerChange)
         QgsProject().instance().layersWillBeRemoved.disconnect(self.onLayersDelete)
+        self.cbxField.stateChanged.disconnect(self.onFieldFilter)
+        self.qgsFieldCb.fieldChanged.disconnect(self.fillFeatureList)
         self.lwFeatures.itemSelectionChanged.disconnect(
             self.selectFeatureByRow)
-        self.qgsFieldCb.fieldChanged.disconnect(self.fillFeatureList)
 
     def closeEvent(self, event):
         self.closingPlugin.emit()
@@ -95,19 +92,33 @@ class QAttributeEditorDockWidget(QDockWidget, FORM_CLASS):
             layer.selectionChanged.connect(self.onSelectionChange)
             self.connectedLayers.append(layer.id())
 
-    def onSelectionChange(self, selected):
-        self.selectByList = False
-        self.lwFeatures.clearSelection()
-        for fid in selected:
-            item = self.lwFeatures.findItems(str(fid), Qt.MatchExactly)[0]
-            item.setSelected(True)
-            self.lwFeatures.scrollToItem(item)
-        self.selectByList = True
-
     def onLayersDelete(self, layers):
         for layer in layers:
             if layer in self.connectedLayers:
                 self.connectedLayers.remove(layer)
+
+    def onFieldFilter(self, state: int):
+        if state == 2:
+            self.qgsFieldCb.setEnabled(True)
+            current_field = self.qgsFieldCb.currentField()
+            if current_field:
+                self.fillFeatureList(current_field)
+        else:
+            self.qgsFieldCb.setEnabled(False)
+            self.fillFeatureList()
+
+    def onSelectionChange(self, selected):
+        self.selectByList = False
+        self.lwFeatures.clearSelection()
+        current_field = self.qgsFieldCb.currentField()
+        for fid in selected:
+            if current_field:
+                feat = iface.activeLayer().getFeature(fid)
+                fid = f'{fid} {feat[current_field]}'
+            item = self.lwFeatures.findItems(str(fid), Qt.MatchExactly)[0]
+            item.setSelected(True)
+            self.lwFeatures.scrollToItem(item)
+        self.selectByList = True
 
     def fillFeatureList(self, by_attribute=None):
         """ Filling list widget with feature infos """
