@@ -70,7 +70,6 @@ class QAttributeEditor:
 
         # print "** INITIALIZING QAttributeEditor"
 
-        self.pluginIsActive = False
         self.dockwidget = None
 
     # noinspection PyMethodMayBeStatic
@@ -99,6 +98,7 @@ class QAttributeEditor:
             add_to_toolbar=True,
             status_tip=None,
             whats_this=None,
+            checkable=False,
             parent=None):
         """Add a toolbar icon to the toolbar.
 
@@ -143,6 +143,7 @@ class QAttributeEditor:
         action = QAction(icon, text, parent)
         action.triggered.connect(callback)
         action.setEnabled(enabled_flag)
+        action.setCheckable(checkable)
 
         if status_tip is not None:
             action.setStatusTip(status_tip)
@@ -164,66 +165,39 @@ class QAttributeEditor:
 
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
-
         icon_path = ':/plugins/qattribute_editor/icon.png'
-        self.add_action(
+        self.showDock = self.add_action(
             icon_path,
+            checkable=True,
             text=self.tr(u'qAttributeEditor'),
-            callback=self.run,
-            parent=self.iface.mainWindow())
-
-    # --------------------------------------------------------------------------
+            callback=self.showMainDock,
+            parent=self.iface.mainWindow()
+        )
 
     def onClosePlugin(self):
         """Cleanup necessary items here when plugin dockwidget is closed"""
-
-        # print "** CLOSING QAttributeEditor"
-
-        # disconnects
         self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
-
-        # remove this statement if dockwidget is to remain
-        # for reuse if plugin is reopened
-        # Commented next statement since it causes QGIS crashe
-        # when closing the docked window:
-        # self.dockwidget = None
-
-        self.pluginIsActive = False
+        self.showDock.setChecked(False)
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
-
-        # print "** UNLOAD QAttributeEditor"
-
         for action in self.actions:
             self.iface.removePluginVectorMenu(
                 self.tr(u'&qAttributeEditor'),
                 action)
             self.iface.removeToolBarIcon(action)
-        # remove the toolbar
         del self.toolbar
+        if self.dockwidget:
+            self.dockwidget.disconnectSignals()
 
-    # --------------------------------------------------------------------------
-
-    def run(self):
+    def showMainDock(self, state):
         """Run method that loads and starts the plugin"""
-
-        if not self.pluginIsActive:
-            self.pluginIsActive = True
-
-            # print "** STARTING QAttributeEditor"
-
-            # dockwidget may not exist if:
-            #    first run of plugin
-            #    removed on close (see self.onClosePlugin method)
+        if state:
             if self.dockwidget == None:
-                # Create the dockwidget (after translation) and keep reference
                 self.dockwidget = QAttributeEditorDockWidget()
-
-            # connect to provide cleanup on closing of dockwidget
             self.dockwidget.closingPlugin.connect(self.onClosePlugin)
-
-            # show the dockwidget
-            # TODO: fix to allow choice of dock location
+            self.dockwidget.visibilityChanged.connect(self.showDock.setChecked)
             self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
+        else:
+            self.dockwidget.hide()

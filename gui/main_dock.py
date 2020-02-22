@@ -24,27 +24,110 @@
 
 import os
 
-from qgis.PyQt import QtGui, QtWidgets, uic
-from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt import QtGui, uic
+from qgis.PyQt.QtWidgets import QDockWidget, QListWidgetItem
+from qgis.PyQt.QtCore import pyqtSignal, Qt
+from qgis.core import QgsApplication, QgsMapLayer, QgsProject
+from qgis.utils import iface
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'main_dock.ui'))
 
 
-class QAttributeEditorDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
+class QAttributeEditorDockWidget(QDockWidget, FORM_CLASS):
 
     closingPlugin = pyqtSignal()
 
     def __init__(self, parent=None):
         """Constructor."""
         super(QAttributeEditorDockWidget, self).__init__(parent)
-        # Set up the user interface from Designer.
-        # After setupUI you can access any designer object by doing
-        # self.<objectname>, and you can use autoconnect slots - see
-        # http://doc.qt.io/qt-5/designer-using-a-ui-file.html
-        # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
+        self.setIcons()
+        self.connectSignals()
+        self.connectedLayers = []
+        self.selectByList = True
+
+    def setIcons(self):
+        """ Setting icons for toolbuttons """
+        self.tbPrev.setIcon(
+            QgsApplication.getThemeIcon('mActionArrowUp.svg'))
+        self.tbNext.setIcon(
+            QgsApplication.getThemeIcon('mActionArrowDown.svg'))
+        self.tbZoom.setIcon(
+            QgsApplication.getThemeIcon('mActionZoomToSelected.svg'))
+
+    def connectSignals(self):
+        """ Connecting all signals within dockwidget """
+        iface.currentLayerChanged.connect(self.onLayerChange)
+        QgsProject().instance().layersWillBeRemoved.connect(self.onLayersDelete)
+        self.lwFeatures.itemSelectionChanged.connect(self.selectFeatureByRow)
+        self.cbxAttribute.stateChanged.connect(
+            lambda data: self.qgsFieldCb.setEnabled(True)
+            if data == 2 else self.qgsFieldCb.setEnabled(False)
+        )
+        self.qgsFieldCb.fieldChanged.connect(self.fillFeatureList)
+        self.tbZoom.clicked.connect(lambda: self.lwFeatures.clearSelection())
+
+    def disconnectSignals(self):
+        """ Disconnecting all signals within dockwidget on plugin unload """
+        iface.currentLayerChanged.disconnect(self.onLayerChange)
+        QgsProject().instance().layersWillBeRemoved.disconnect(self.onLayersDelete)
+        self.lwFeatures.itemSelectionChanged.disconnect(
+            self.selectFeatureByRow)
+        self.qgsFieldCb.fieldChanged.disconnect(self.fillFeatureList)
 
     def closeEvent(self, event):
         self.closingPlugin.emit()
         event.accept()
+
+    @property
+    def is_invalid(self):
+        layer = iface.activeLayer()
+        return not layer or layer.type() != QgsMapLayer.VectorLayer
+
+    def onLayerChange(self, layer):
+        """ Setting widget controls to active layer """
+        self.qgsFieldCb.setLayer(layer)
+        self.fillFeatureList()
+        if self.is_invalid:
+            return
+        if layer.id() not in self.connectedLayers:
+            layer.selectionChanged.connect(self.onSelectionChange)
+            self.connectedLayers.append(layer.id())
+
+    def onSelectionChange(self, selected):
+        self.selectByList = False
+        # TODO: ZDEBUGOWAĆ TEN SHIIIIT REKURENCYJNY :'(
+        # self.lwFeatures.clearSelection()
+        for fid in selected:
+            item = self.lwFeatures.findItems(str(fid), Qt.MatchExactly)[0]
+            item.setSelected(True)
+            self.lwFeatures.scrollToItem(item)
+
+    def onLayersDelete(self, layers):
+        for layer in layers:
+            if layer in self.connectedLayers:
+                self.connectedLayers.remove(layer)
+
+    def fillFeatureList(self, by_attribute=None):
+        """ Filling list widget with feature infos """
+        self.lwFeatures.clear()
+        if self.is_invalid:
+            return
+        layer = iface.activeLayer()
+        if not by_attribute:
+            rows = [str(f.id()) for f in layer.getFeatures()]
+        else:
+            rows = [f'{f.id()} {f[by_attribute]}' for f in layer.getFeatures()]
+        self.lwFeatures.addItems(rows)
+
+    def selectFeatureByRow(self):
+        """ Selecting active layer feature by selecting item in list """
+        if self.is_invalid:
+            return
+        if self.selectByList:
+            layer = iface.activeLayer()
+            fids = [int(item.text().split(' ', 1)[0])
+                    for item in self.lwFeatures.selectedItems()]
+            layer.selectByIds(fids)
+        self.selectByList = True
