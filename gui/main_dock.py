@@ -97,12 +97,12 @@ class QAttributeEditorDockWidget(QDockWidget, FORM_CLASS):
 
     def onSelectionChange(self, selected):
         self.selectByList = False
-        # TODO: ZDEBUGOWAĆ TEN SHIIIIT REKURENCYJNY :'(
-        # self.lwFeatures.clearSelection()
+        self.lwFeatures.clearSelection()
         for fid in selected:
             item = self.lwFeatures.findItems(str(fid), Qt.MatchExactly)[0]
             item.setSelected(True)
             self.lwFeatures.scrollToItem(item)
+        self.selectByList = True
 
     def onLayersDelete(self, layers):
         for layer in layers:
@@ -130,4 +130,3 @@ class QAttributeEditorDockWidget(QDockWidget, FORM_CLASS):
             fids = [int(item.text().split(' ', 1)[0])
                     for item in self.lwFeatures.selectedItems()]
             layer.selectByIds(fids)
-        self.selectByList = True
